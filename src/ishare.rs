@@ -25,7 +25,8 @@ pub struct ResourceAccess {
 pub struct IshareClaims {
     iss: String,
     pub sub: String,
-    pub aud: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
     jti: String,
     exp: u64,
     iat: u64,
@@ -93,7 +94,7 @@ fn parse_certicate(pem: Vec<u8>) -> Result<String, IshareError> {
     Ok(certificate)
 }
 
-fn parse_serial_number(cert: &X509) -> Result<String, IshareError> {
+fn _parse_serial_number(cert: &X509) -> Result<String, IshareError> {
     let sub = cert
         .subject_name()
         .entries()
@@ -295,13 +296,6 @@ impl ISHARE {
         target_id: Option<String>,
         client_id: &String,
     ) -> Result<IshareClaims, IshareError> {
-        let cert = self.client_cert.cert.as_ref().unwrap();
-        let serial_number = parse_serial_number(&cert)?;
-
-        let target_id = match target_id {
-            Some(target) => target,
-            None => serial_number,
-        };
         let iat = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| IshareError {
