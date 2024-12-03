@@ -1,5 +1,7 @@
+use core::str;
 use std::time::UNIX_EPOCH;
-
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use anyhow::Context;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
@@ -202,7 +204,12 @@ impl ISHARE {
             ("client_assertion", client_assertion),
         ];
 
-        let response = reqwest::Client::new()
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+        let client = ClientBuilder::new(reqwest::Client::new())
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build();
+
+        let response = client
             .post(format!("{}/connect/token", self.satellite_url))
             .form(&form_data)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -210,14 +217,14 @@ impl ISHARE {
             .await
             .map_err(|e| IshareError {
                 message: e.to_string(),
-            })?
-            .json::<LoginResponse>()
-            .await
-            .map_err(|e| IshareError {
-                message: e.to_string(),
             })?;
 
-        return Ok(response);
+        let bytes = response.bytes().await.unwrap();
+        let body = serde_json::from_slice::<LoginResponse>(&bytes).map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+
+        return Ok(body);
     }
 
     pub async fn parties(
