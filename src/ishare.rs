@@ -1,8 +1,5 @@
-use core::str;
-use std::time::UNIX_EPOCH;
-use reqwest_middleware::ClientBuilder;
-use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use anyhow::Context;
+use core::str;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
@@ -11,7 +8,12 @@ use openssl::{
     pkey::{PKey, Private},
     x509::X509,
 };
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::{
+    policies::ExponentialBackoff, RetryTransientMiddleware, Retryable, RetryableStrategy,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::time::UNIX_EPOCH;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -146,6 +148,16 @@ pub struct ISHARE {
     pub sattelite_eori: String,
 }
 
+struct RetryOnError;
+impl RetryableStrategy for RetryOnError {
+    fn handle(&self, res: &reqwest_middleware::Result<reqwest::Response>) -> Option<Retryable> {
+        match res {
+            Ok(_success) => Some(Retryable::Transient),
+            Err(_error) => Some(Retryable::Transient),
+        }
+    }
+}
+
 impl ISHARE {
     pub fn new(
         client_cert_path: String,
@@ -205,8 +217,11 @@ impl ISHARE {
         ];
 
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+        let ret_s =
+            RetryTransientMiddleware::new_with_policy_and_strategy(retry_policy, RetryOnError);
+
         let client = ClientBuilder::new(reqwest::Client::new())
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .with(ret_s)
             .build();
 
         let response = client
@@ -528,29 +543,6 @@ pub enum DecodeTokenError {
     #[error(transparent)]
     DecodingError(#[from] jsonwebtoken::errors::Error),
 }
-
-// #[derive(thiserror::Error)]
-// pub struct ExpectedError {
-//     pub status_code: StatusCode,
-//     // message to display to the client
-//     pub message: String,
-//     // this is for debug purposes
-//     pub reason: String,
-//     // metadata to send to the client
-//     pub metadata: Option<serde_json::Value>,
-// }
-
-// impl std::fmt::Display for ExpectedError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "{}", self.message)
-//     }
-// }
-
-// impl std::fmt::Debug for ExpectedError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         write!(f, "{}", self.reason)
-//     }
-// }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Adherence {
