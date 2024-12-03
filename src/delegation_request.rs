@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
-#[derive(Serialize, Deserialize)]
+
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationRequestContainer {
     #[serde(rename = "delegationRequest")]
     pub delegation_request: DelegationRequest,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationRequest {
     pub policy_issuer: String,
@@ -14,26 +15,26 @@ pub struct DelegationRequest {
     pub policy_sets: Vec<PolicySet>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationTarget {
     pub access_subject: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySet {
     pub policies: Vec<Policy>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Policy {
     pub target: ResourceTarget,
     pub rules: Vec<ResourceRules>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTarget {
     pub resource: Resource,
@@ -41,7 +42,7 @@ pub struct ResourceTarget {
     pub environment: Environment,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Resource {
     #[serde(rename = "type")]
@@ -50,13 +51,13 @@ pub struct Resource {
     pub attributes: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRules {
     pub effect: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Environment {
     pub service_providers: Vec<String>,
