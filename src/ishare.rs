@@ -1,5 +1,6 @@
 use anyhow::Context;
 use core::str;
+use http::Extensions;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
@@ -8,7 +9,8 @@ use openssl::{
     pkey::{PKey, Private},
     x509::X509,
 };
-use reqwest_middleware::ClientBuilder;
+use reqwest::{Request, Response};
+use reqwest_middleware::{ClientBuilder, Middleware, Next};
 use reqwest_retry::{
     policies::ExponentialBackoff, RetryTransientMiddleware, Retryable, RetryableStrategy,
 };
@@ -148,13 +150,48 @@ pub struct ISHARE {
     pub sattelite_eori: String,
 }
 
+impl std::fmt::Debug for ISHARE {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", "ISHARE")
+    }
+}
+
 struct RetryOnError;
 impl RetryableStrategy for RetryOnError {
     fn handle(&self, res: &reqwest_middleware::Result<reqwest::Response>) -> Option<Retryable> {
         match res {
-            Ok(_success) => Some(Retryable::Transient),
+            Ok(res) if res.status().is_success() => None,
+            Ok(_res) => Some(Retryable::Transient),
             Err(_error) => Some(Retryable::Transient),
         }
+    }
+}
+
+struct LoggingMiddleware;
+
+#[async_trait::async_trait]
+impl Middleware for LoggingMiddleware {
+    async fn handle(
+        &self,
+        req: Request,
+        extensions: &mut Extensions,
+        next: Next<'_>,
+    ) -> reqwest_middleware::Result<Response> {
+        let res = next.run(req, extensions).await;
+
+        match &res {
+            Ok(res) if res.status().is_success() => {
+                tracing::info!("Request finished: status [{}]", res.status())
+            }
+            Ok(res) => {
+                tracing::error!("Request finished: status [{}]", res.status())
+            }
+            Err(err) => {
+                tracing::error!("Request finished with error [{:?}]", err)
+            }
+        }
+
+        res
     }
 }
 
@@ -201,6 +238,7 @@ impl ISHARE {
         return self.client_eori.clone();
     }
 
+    #[tracing::instrument(skip(client_assertion))]
     pub async fn get_satelite_access_token(
         &self,
         client_assertion: &str,
@@ -216,12 +254,13 @@ impl ISHARE {
             ("client_assertion", client_assertion),
         ];
 
-        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(5);
         let ret_s =
             RetryTransientMiddleware::new_with_policy_and_strategy(retry_policy, RetryOnError);
 
         let client = ClientBuilder::new(reqwest::Client::new())
             .with(ret_s)
+            .with(LoggingMiddleware)
             .build();
 
         let response = client
