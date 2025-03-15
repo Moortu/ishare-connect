@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationEvidence {
     pub not_before: i64,
@@ -10,13 +10,13 @@ pub struct DelegationEvidence {
     pub policy_sets: Vec<PolicySet>,
 }
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationTarget {
     pub access_subject: String,
 }
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySet {
     pub max_delegation_depth: i32,
@@ -24,26 +24,26 @@ pub struct PolicySet {
     pub policies: Vec<Policy>,
 }
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySetTarget {
     pub environment: PolicySetTargetEnvironment,
 }
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySetTargetEnvironment {
     pub licenses: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Policy {
     pub target: ResourceTarget,
     pub rules: Vec<ResourceRules>,
 }
 
-#[derive(Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTarget {
     pub resource: Resource,
@@ -51,7 +51,7 @@ pub struct ResourceTarget {
     pub environment: Environment,
 }
 
-#[derive(Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Resource {
     #[serde(rename = "type")]
@@ -60,13 +60,13 @@ pub struct Resource {
     pub attributes: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRules {
     pub effect: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Environment {
     pub service_providers: Vec<String>,
@@ -98,7 +98,7 @@ pub fn verify_delegation_evidence(
     return rules.get(0).unwrap().effect == "Permit";
 }
 
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationEvidenceContainer {
     pub delegation_evidence: DelegationEvidence,

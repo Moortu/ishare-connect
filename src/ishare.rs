@@ -486,16 +486,14 @@ impl ISHARE {
     pub fn validate_party_certificate(
         &self,
         client_assertion_token: &TokenData<IshareClaims>,
-        party_token: &TokenData<PartyToken>,
+        party_info: &PartyInfo,
     ) -> anyhow::Result<bool> {
         let client_cert = match client_assertion_token.header.x5c.clone() {
             Some(x) => x[0].clone(),
             None => return Err(anyhow::anyhow!("missing x5c header")),
         };
 
-        if !party_token
-            .claims
-            .party_info
+        if !party_info
             .certificates
             .iter()
             .any(|c| &c.x5c == &client_cert)
@@ -510,7 +508,7 @@ impl ISHARE {
         &self,
         client_id: &str,
         satellite_access_token: &str,
-    ) -> Result<TokenData<PartyToken>, ValidatePartyError> {
+    ) -> Result<PartyInfo, ValidatePartyError> {
         let encoded_party_token = self
             .parties(client_id, satellite_access_token)
             .await
@@ -537,15 +535,16 @@ impl ISHARE {
 
         validation.set_audience(&[&self.client_eori]);
 
-        // TODO check if there is actually an error or if its simply a none-existing eori to provide more finegrained error
         let decoded = decode::<PartyToken>(&encoded_party_token, &decoding_key, &validation)
             .context("Error decoding party token".to_owned())?;
 
-        if decoded.claims.party_info.adherence.status != "Active" {
-            return Err(ValidatePartyError::Inactive(client_id.to_owned()));
+        match decoded.claims.party_info {
+            PartyInfoOption::Empty {} => Err(ValidatePartyError::NotFound(client_id.to_owned())),
+            PartyInfoOption::PartyInfo(party_info) if party_info.adherence.status != "Active" => {
+                Err(ValidatePartyError::Inactive(client_id.to_owned()))
+            }
+            PartyInfoOption::PartyInfo(party_info) => Ok(party_info),
         }
-
-        return Ok(decoded);
     }
 }
 
@@ -563,6 +562,8 @@ pub enum ValidatePartyError {
     Unexpected(#[from] anyhow::Error),
     #[error("The ishare party {0} is currently not active")]
     Inactive(String),
+    #[error("The ishare party {0} does not seem to exist")]
+    NotFound(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -602,6 +603,13 @@ pub struct PartyInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum PartyInfoOption {
+    PartyInfo(PartyInfo),
+    Empty {},
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PartyToken {
     iss: String,
     sub: String,
@@ -610,7 +618,7 @@ pub struct PartyToken {
     exp: u64,
     iat: u64,
     nbf: u64,
-    pub party_info: PartyInfo,
+    party_info: PartyInfoOption,
 }
 
 pub fn validate_request_arguments(
