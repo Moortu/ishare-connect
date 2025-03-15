@@ -68,6 +68,7 @@ impl<'a> PDP<'a> {
         policy_issuer: &str,
         resource_type: &str,
         identifiers: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
     ) -> Result<bool, IshareError> {
         let delegation_request = self.create_delegation_request(
             action,
@@ -75,6 +76,7 @@ impl<'a> PDP<'a> {
             policy_issuer,
             resource_type,
             identifiers,
+            attributes,
         );
 
         let delegation_token = self.call_pdp(access_token, &delegation_request).await?;
@@ -299,13 +301,10 @@ impl<'a> PDP<'a> {
         policy_issuer: &str,
         resource_type: &str,
         identifiers: Option<Vec<String>>,
+        attributes: Option<Vec<String>>,
     ) -> DelegationRequestContainer {
         let service_provider = self.ishare.get_client_eori();
         let actions = vec![action.to_string()];
-        let identifiers = match identifiers {
-            Some(i) => i,
-            None => vec!["*".to_string()],
-        };
 
         let delegation_request = build_simple_delegation_request(
             policy_issuer.to_string(),
@@ -313,8 +312,8 @@ impl<'a> PDP<'a> {
             resource_type.to_string(),
             service_provider,
             actions,
-            Some(identifiers),
-            None, /* attributes */
+            identifiers,
+            attributes,
         );
 
         delegation_request
