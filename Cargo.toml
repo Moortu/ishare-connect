@@ -1,6 +1,6 @@
 [package]
 name = "ishare"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 description = "Helps you connect within the ishare framework"
 homepage = "https://github.com/LIFE-Electronic/ishare-connect"
@@ -30,3 +30,4 @@ utoipa = "5.2.0"
 http = "1.2.0"
 async-trait = "0.1.83"
 tracing = "0.1.41"
+url = "2.5.4"

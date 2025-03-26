@@ -124,6 +124,50 @@ struct PartyResponse {
 }
 
 #[derive(Deserialize)]
+struct CapabilitiesReponse {
+    capabilities_token: String,
+}
+
+#[derive(Deserialize)]
+struct PartiesResponse {
+    parties_token: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SupportedVersion {
+    pub version: String,
+    pub supported_features: Vec<SupportedFeatures>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SupportedFeature {
+    pub id: String,
+    pub feature: String,
+    pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_endpoint: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportedFeatures {
+    Public(Vec<SupportedFeature>),
+    Private(Vec<SupportedFeature>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct CapabilitiesInfo {
+    pub party_id: String,
+    pub ishare_roles: Vec<String>,
+    pub supported_versions: Vec<SupportedVersion>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Capabilities {
+    pub capabilities_info: CapabilitiesInfo,
+}
+
+#[derive(Deserialize)]
 pub struct LoginResponse {
     pub access_token: String,
     pub expires_in: i64,
@@ -279,6 +323,65 @@ impl ISHARE {
         })?;
 
         return Ok(body);
+    }
+
+    pub async fn get_all_parties(
+        &self,
+        satellite_access_token: &str,
+        role: Option<&str>,
+        active_only: Option<bool>,
+    ) -> anyhow::Result<PartiesInfo> {
+        let mut url = url::Url::parse(&format!("{}/parties", self.satellite_url))?;
+
+        if let Some(role) = role {
+            url.query_pairs_mut().append_pair("role", role);
+        }
+
+        if let Some(active_only) = active_only {
+            url.query_pairs_mut()
+                .append_pair("active_only", &active_only.to_string());
+        }
+
+        let formatted_url = url.to_string();
+
+        let response = reqwest::Client::new()
+            .get(&formatted_url)
+            .header(
+                "Authorization",
+                format!("Bearer {}", &satellite_access_token),
+            )
+            .send()
+            .await
+            .context(format!("Error fetching parties at {}", &formatted_url))?;
+
+        let json = response
+            .json::<PartiesResponse>()
+            .await
+            .context("Error deserializing response from parties endpoint")?;
+
+        if !(self
+            .validate_token(&json.parties_token)
+            .context("Error validating parties token")?)
+        {
+            return Err(anyhow::anyhow!("Party token is invalid"));
+        }
+
+        let mut validation = Validation::new(Algorithm::RS256);
+
+        let first_x5c = ISHARE::get_first_x5c(&json.parties_token)
+            .context("Error retrieving x5c from party token")?;
+
+        validation.set_audience(&[&self.client_eori]);
+        let decoding_key =
+            &DecodingKey::from_rsa_pem(&first_x5c.to_pem().context("Error converting x5c to pem")?)
+                .context("Error creating decoding key from rsa pem")?;
+
+        validation.set_audience(&[&self.client_eori]);
+
+        let decoded = decode::<PartiesToken>(&json.parties_token, &decoding_key, &validation)
+            .context("Error decoding party token".to_owned())?;
+
+        return Ok(decoded.claims.parties_info);
     }
 
     pub async fn parties(
@@ -451,6 +554,41 @@ impl ISHARE {
         return Ok(true);
     }
 
+    pub async fn get_public_capabilities(&self, url: &str) -> anyhow::Result<CapabilitiesInfo> {
+        let response = reqwest::get(url)
+            .await
+            .context(format!("Error retrieving capabilities at: {}", url))?;
+
+        let json = response
+            .json::<CapabilitiesReponse>()
+            .await
+            .context("Error deserializing response from parties endpoint")?;
+
+        if !(self
+            .validate_token(&json.capabilities_token)
+            .context("Error validating capabilities token")?)
+        {
+            return Err(anyhow::anyhow!("Capabilities token is not valid"));
+        }
+
+        let mut validation = Validation::new(Algorithm::RS256);
+
+        let first_x5c = ISHARE::get_first_x5c(&json.capabilities_token)
+            .context("Error retrieving x5c from capabilities token")?;
+
+        validation.set_audience(&[&self.client_eori]);
+        let decoding_key =
+            &DecodingKey::from_rsa_pem(&first_x5c.to_pem().context("Error converting x5c to pem")?)
+                .context("Error creating decoding key from rsa pem")?;
+
+        validation.set_audience(&[&self.client_eori]);
+
+        let decoded =
+            decode::<Capabilities>(&json.capabilities_token, &decoding_key, &validation).unwrap();
+
+        return Ok(decoded.claims.capabilities_info);
+    }
+
     pub fn decode_token(&self, token: &str) -> Result<TokenData<IshareClaims>, DecodeTokenError> {
         let mut validation = Validation::new(Algorithm::RS256);
 
@@ -600,6 +738,7 @@ pub struct PartyInfo {
     pub party_id: String,
     pub party_name: String,
     pub certificates: Vec<Certificate>,
+    pub capability_url: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -619,6 +758,24 @@ pub struct PartyToken {
     iat: u64,
     nbf: u64,
     party_info: PartyInfoOption,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PartiesInfo {
+    pub data: Vec<PartyInfo>,
+    pub count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PartiesToken {
+    iss: String,
+    sub: String,
+    aud: String,
+    jti: String,
+    exp: u64,
+    iat: u64,
+    nbf: u64,
+    parties_info: PartiesInfo,
 }
 
 pub fn validate_request_arguments(
