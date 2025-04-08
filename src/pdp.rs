@@ -84,7 +84,7 @@ impl<'a> PDP<'a> {
         return self
             .check_delegation_token(&delegation_token, resource_type)
             .map_err(|e| IshareError {
-                message: format!("{}", e),
+                message: format!("{:?}", e),
             });
     }
 

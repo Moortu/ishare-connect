@@ -34,8 +34,8 @@ pub struct IshareClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
     jti: String,
-    exp: u64,
-    iat: u64,
+    pub exp: u64,
+    pub iat: u64,
     #[serde(skip_deserializing)]
     nbf: u64,
 }
@@ -589,7 +589,11 @@ impl ISHARE {
         return Ok(decoded.claims.capabilities_info);
     }
 
-    pub fn decode_token(&self, token: &str) -> Result<TokenData<IshareClaims>, DecodeTokenError> {
+    pub fn decode_token(
+        &self,
+        token: &str,
+        client_id: &str,
+    ) -> Result<TokenData<IshareClaims>, DecodeTokenError> {
         let mut validation = Validation::new(Algorithm::RS256);
 
         validation.set_audience(&[&self.client_eori]);
@@ -599,6 +603,20 @@ impl ISHARE {
                 .context("Error creating decoding key from rsa pem")?;
 
         let decoded = decode::<IshareClaims>(&token, decoding_key, &validation)?;
+
+        match decoded.header.typ {
+            None => return Err(DecodeTokenError::MissingTypHeader),
+            Some(t) if t != "JWT" => return Err(DecodeTokenError::InvalidTypeHeader),
+            Some(_) => {}
+        }
+
+        if decoded.claims.exp != (decoded.claims.iat + 30) {
+            return Err(DecodeTokenError::ExpNotIatPlus30);
+        }
+
+        if decoded.claims.iss != client_id {
+            return Err(DecodeTokenError::IssDoesntMatchClientId);
+        }
 
         Ok(decoded)
     }
@@ -720,6 +738,14 @@ pub enum DecodeTokenError {
     Unexpected(#[from] anyhow::Error),
     #[error(transparent)]
     DecodingError(#[from] jsonwebtoken::errors::Error),
+    #[error("typ is missing from header")]
+    MissingTypHeader,
+    #[error("typ should be 'JWT'")]
+    InvalidTypeHeader,
+    #[error("exp field is not iat + 30 seconds")]
+    ExpNotIatPlus30,
+    #[error("iss does not match client_id")]
+    IssDoesntMatchClientId,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
