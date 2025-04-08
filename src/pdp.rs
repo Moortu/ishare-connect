@@ -360,9 +360,7 @@ impl<'a> PDP<'a> {
     }
 
     pub async fn connect(&self) -> Result<LoginResponse, IshareError> {
-        let client_assertion = self
-            .ishare
-            .create_client_assertion(Some(self.eori.clone()))?;
+        let client_assertion = self.ishare.create_client_assertion(self.eori.clone())?;
 
         let client_id = self.ishare.get_client_eori();
 

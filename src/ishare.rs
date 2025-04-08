@@ -31,8 +31,7 @@ pub struct ResourceAccess {
 pub struct IshareClaims {
     iss: String,
     pub sub: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aud: Option<String>,
+    pub aud: String,
     jti: String,
     pub exp: u64,
     pub iat: u64,
@@ -457,7 +456,7 @@ impl ISHARE {
 
     fn create_ishare_claims(
         &self,
-        target_id: Option<String>,
+        target_id: String,
         client_id: &String,
     ) -> Result<IshareClaims, IshareError> {
         let iat = std::time::SystemTime::now()
@@ -480,10 +479,7 @@ impl ISHARE {
         return Ok(claims);
     }
 
-    pub fn create_client_assertion(
-        &self,
-        target_id: Option<String>,
-    ) -> Result<String, IshareError> {
+    pub fn create_client_assertion(&self, target_id: String) -> Result<String, IshareError> {
         let header = self.create_ishare_header()?;
         let claims = self.create_ishare_claims(target_id, &self.client_eori)?;
         let encoding_key = self.get_encoding_key()?;
@@ -494,7 +490,7 @@ impl ISHARE {
 
     pub fn create_client_assertion_with_extra_claims<T: Serialize>(
         &self,
-        target_id: Option<String>,
+        target_id: String,
         extra_claims: T,
     ) -> Result<String, IshareError> {
         let header = self.create_ishare_header()?;
@@ -616,6 +612,10 @@ impl ISHARE {
 
         if decoded.claims.iss != client_id {
             return Err(DecodeTokenError::IssDoesntMatchClientId);
+        }
+
+        if decoded.claims.sub != decoded.claims.iss {
+            return Err(DecodeTokenError::SubDoesNotMatchIss);
         }
 
         Ok(decoded)
@@ -746,6 +746,12 @@ pub enum DecodeTokenError {
     ExpNotIatPlus30,
     #[error("iss does not match client_id")]
     IssDoesntMatchClientId,
+    #[error("sub does not match iss")]
+    SubDoesNotMatchIss,
+    #[error("serial number not found in x5c certificate")]
+    SerialNotFound,
+    #[error("serial does not match client id")]
+    SerialDoesntMatchClientId,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

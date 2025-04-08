@@ -5,7 +5,7 @@ use ishare::ishare::ISHARE;
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short, long)]
-    target_id: Option<String>,
+    target_id: String,
 
     #[arg(short, long)]
     id_client: String,
