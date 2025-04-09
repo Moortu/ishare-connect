@@ -587,6 +587,7 @@ impl ISHARE {
 
     pub fn decode_token(
         &self,
+        now: chrono::DateTime<chrono::Utc>,
         token: &str,
         client_id: &str,
     ) -> Result<TokenData<IshareClaims>, DecodeTokenError> {
@@ -608,6 +609,15 @@ impl ISHARE {
 
         if decoded.claims.exp != (decoded.claims.iat + 30) {
             return Err(DecodeTokenError::ExpNotIatPlus30);
+        }
+
+        if decoded.claims.iat
+            > now
+                .timestamp()
+                .try_into()
+                .context("error converting timestamp to i64")?
+        {
+            return Err(DecodeTokenError::IatAfterNow);
         }
 
         if decoded.claims.iss != client_id {
@@ -662,6 +672,7 @@ impl ISHARE {
 
     pub async fn validate_party(
         &self,
+        now: chrono::DateTime<chrono::Utc>,
         client_id: &str,
         satellite_access_token: &str,
     ) -> Result<PartyInfo, ValidatePartyError> {
@@ -699,7 +710,19 @@ impl ISHARE {
             PartyInfoOption::PartyInfo(party_info) if party_info.adherence.status != "Active" => {
                 Err(ValidatePartyError::Inactive(client_id.to_owned()))
             }
-            PartyInfoOption::PartyInfo(party_info) => Ok(party_info),
+            PartyInfoOption::PartyInfo(party_info) => {
+                let end_date = chrono::DateTime::parse_from_rfc3339(&party_info.adherence.end_date)
+                    .context(format!(
+                        "Error parsing adherence end date {}",
+                        &party_info.adherence.end_date
+                    ))?;
+
+                if now > end_date {
+                    return Err(ValidatePartyError::AdherenceExpired);
+                }
+
+                Ok(party_info)
+            }
         }
     }
 }
@@ -720,6 +743,8 @@ pub enum ValidatePartyError {
     Inactive(String),
     #[error("The ishare party {0} does not seem to exist")]
     NotFound(String),
+    #[error("adherence is not active anymore")]
+    AdherenceExpired,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -752,11 +777,14 @@ pub enum DecodeTokenError {
     SerialNotFound,
     #[error("serial does not match client id")]
     SerialDoesntMatchClientId,
+    #[error("issued at is in the future")]
+    IatAfterNow,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Adherence {
     pub status: String,
+    pub end_date: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
