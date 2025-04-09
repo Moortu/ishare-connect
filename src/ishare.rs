@@ -718,7 +718,7 @@ impl ISHARE {
                     ))?;
 
                 if now > end_date {
-                    return Err(ValidatePartyError::AdherenceExpired);
+                    tracing::warn!("end_date of adherence is expired");
                 }
 
                 Ok(party_info)
