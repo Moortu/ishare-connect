@@ -590,10 +590,16 @@ impl ISHARE {
         now: chrono::DateTime<chrono::Utc>,
         token: &str,
         client_id: &str,
+        audience: Option<&str>,
     ) -> Result<TokenData<IshareClaims>, DecodeTokenError> {
         let mut validation = Validation::new(Algorithm::RS256);
 
-        validation.set_audience(&[&self.client_eori]);
+        let audience = match audience {
+            None => &self.client_eori,
+            Some(aud) => aud,
+        };
+
+        validation.set_audience(&[audience]);
         let first_x5c = ISHARE::get_first_x5c(token)?;
         let decoding_key =
             &DecodingKey::from_rsa_pem(&first_x5c.to_pem().context("Error converting x5c to pem")?)
