@@ -165,7 +165,7 @@ impl<'a> PDP<'a> {
                     identifiers: actual_identifiers,
                     attributes: actual_attributes,
                 },
-                environment: Environment { service_providers },
+                environment: Some(Environment { service_providers }),
             },
         };
 

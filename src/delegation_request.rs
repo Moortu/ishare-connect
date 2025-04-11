@@ -40,7 +40,8 @@ pub struct Policy {
 pub struct ResourceTarget {
     pub resource: Resource,
     pub actions: Vec<String>,
-    pub environment: Environment,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<Environment>,
 }
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -58,7 +59,7 @@ pub struct ResourceRules {
     pub effect: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Environment {
     pub service_providers: Vec<String>,
@@ -100,11 +101,14 @@ pub fn build_simple_delegation_request(
                         identifiers: actual_identifiers,
                         attributes: actual_attributes,
                     },
-                    environment: Environment { service_providers },
+                    environment: Some(Environment { service_providers }),
                 },
             }],
         }],
     };
 
-    return DelegationRequestContainer { delegation_request, previous_steps: None };
+    return DelegationRequestContainer {
+        delegation_request,
+        previous_steps: None,
+    };
 }

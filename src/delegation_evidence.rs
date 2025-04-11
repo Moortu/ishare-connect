@@ -48,7 +48,8 @@ pub struct Policy {
 pub struct ResourceTarget {
     pub resource: Resource,
     pub actions: Vec<String>,
-    pub environment: Environment,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<Environment>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, utoipa::ToSchema)]
@@ -138,7 +139,7 @@ pub fn build_append_delegation_request(
                 identifiers: actual_identifiers,
                 attributes: actual_attributes,
             },
-            environment: Environment { service_providers },
+            environment: Some(Environment { service_providers }),
         },
     };
 
@@ -185,7 +186,10 @@ pub fn build_filter_delegation_request(
                 && p.target.resource.identifiers == identifiers
                 && p.target.actions == actions
                 && p.target.resource.attributes == attributes
-                && p.target.environment.service_providers == service_providers)
+                && p.target
+                    .environment
+                    .as_ref()
+                    .is_some_and(|e| e.service_providers == service_providers))
         })
         .collect();
 
