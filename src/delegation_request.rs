@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct DelegationRequestContainer {
+    #[serde(rename = "delegationRequest")]
     pub delegation_request: DelegationRequest,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previous_steps: Option<Vec<String>>,
