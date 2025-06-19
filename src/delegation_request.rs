@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 pub struct DelegationRequestContainer {
     #[serde(rename = "delegationRequest")]
     pub delegation_request: DelegationRequest,
@@ -8,7 +8,7 @@ pub struct DelegationRequestContainer {
     pub previous_steps: Option<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationRequest {
     pub policy_issuer: String,
@@ -16,26 +16,26 @@ pub struct DelegationRequest {
     pub policy_sets: Vec<PolicySet>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationTarget {
     pub access_subject: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicySet {
     pub policies: Vec<Policy>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Policy {
     pub target: ResourceTarget,
     pub rules: Vec<ResourceRules>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceTarget {
     pub resource: Resource,
@@ -44,7 +44,7 @@ pub struct ResourceTarget {
     pub environment: Option<Environment>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Resource {
     #[serde(rename = "type")]
@@ -53,7 +53,7 @@ pub struct Resource {
     pub attributes: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Serialize, Deserialize, utoipa::ToSchema, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceRules {
     pub effect: String,
