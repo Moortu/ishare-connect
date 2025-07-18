@@ -138,20 +138,21 @@ pub struct SupportedVersion {
     pub supported_features: Vec<SupportedFeatures>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SupportedFeature {
     pub id: String,
     pub feature: String,
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_endpoint: Option<String>,
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum SupportedFeatures {
     Public(Vec<SupportedFeature>),
-    Private(Vec<SupportedFeature>),
+    Restricted(Vec<SupportedFeature>),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -640,9 +641,14 @@ impl ISHARE {
     pub fn decode_token_custom_claims<CustomClaims: DeserializeOwned>(
         &self,
         token: &str,
+        audience: Option<&str>,
     ) -> Result<TokenData<IshareClaimsWithExtra<CustomClaims>>, DecodeTokenError> {
         let mut validation = Validation::new(Algorithm::RS256);
-        validation.set_audience(&[&self.client_eori]);
+
+        match audience {
+            Some(aud) => validation.set_audience(&[aud]),
+            None => validation.set_audience(&[&self.client_eori]),
+        }
 
         let first_x5c = ISHARE::get_first_x5c(token)?;
         let decoding_key =

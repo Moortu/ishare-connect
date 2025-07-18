@@ -95,7 +95,7 @@ impl<'a> PDP<'a> {
     ) -> Result<bool, ishare::DecodeTokenError> {
         let decoded: TokenData<IshareClaimsWithExtra<DelegationTokenClaims>> =
             self.ishare
-                .decode_token_custom_claims::<DelegationTokenClaims>(delegation_token)?;
+                .decode_token_custom_claims::<DelegationTokenClaims>(delegation_token, None)?;
 
         let de = decoded.claims.extra.delegation_evidence;
 
