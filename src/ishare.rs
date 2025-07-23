@@ -4,7 +4,7 @@ use http::Extensions;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
-use josekit::{jwe::{RSA_OAEP_256, JweHeader}, jws::{JwsHeader, RS256}, jwt::{self, JwtPayload}};
+use josekit::{jwe::{RSA_OAEP_256, JweHeader}, jwt::{self, JwtPayload}};
 use openssl::{
     pkcs12::ParsedPkcs12_2,
     pkey::{PKey, Private},
@@ -552,9 +552,6 @@ impl ISHARE {
         for claim in claims_map {
             let _ = jwe_payload.set_claim(claim.0, Some(claim.1.clone()));
         }
-        
-        // encrypt with pub key from IDP (so that IDP can decrypt with privat ekey)
-        //let public_key = "-----BEGIN PUBLIC KEY-----\nMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtumnICX3vD6eRumG+2og\nfMI0D/X7AInkihHeIraFyJXg1hF3+5hgr6sGgmrLKxuv/e7X8uyw8IEC0TCo6YGF\nE/cMc8T/4wk+0HAuzwhA3AFjpgWyrGPnk3t30y8/PkLUqy1X9lh1GyqKperoU+xG\nXkqkcf9feu2uNuRCTAJGwCru3wQ45YyY8/bLSsDfG1cSpejLlK23NGWh6wmmJuh0\ncS8BaHhbuf21NA0n2zswBFK0XS5Qo0X4HCjYqizrkSLeyExXhc5wGsX59g5DRcuc\nsRiGPUz0UEaaVmW6rE4EP+5L62TsxJj5EJZzOQ+EegyhaakAW8z1fMc/YVM6sVVu\nyM8qD6zfdFNEmX1BY++PszFPUtFwxcx6WWjDM7+oDLdbmFaioa4k6CevctsudeF7\nruTwk5k984gJrtgx+M6uJWRXlb8grwuqK2E0fGOJNi7Gb4/nhHVLHw3W3EYRj+tT\nQoy225BpAhwTi6PvgzF99yeff6H/Mcxv+3lYljdnnOBb+LRIW/hQ51F201GeOZIj\nLG1GqA3k83b3LLRLQluA6E413zllXNJWXW0Oeu9LeDxj98VWaiOq29jBn8mBI2yq\nLGQLq313B/VhG/wCo3MBfBBxl+uYghWbzWg/jRnU4AqMJgeu/sYVUiULActTcg1k\nnJhefHUQFnR8YzcIxVZ95zcCAwEAAQ==\n-----END PUBLIC KEY-----".as_bytes();
 
         let cert = openssl::x509::X509::from_pem(
             format!(
