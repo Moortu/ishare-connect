@@ -155,10 +155,16 @@ pub enum SupportedFeatures {
     Restricted(Vec<SupportedFeature>),
 }
 
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Role {
+    role: String 
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CapabilitiesInfo {
     pub party_id: String,
-    pub ishare_roles: Vec<String>,
+    pub ishare_roles: Vec<Role>,
     pub supported_versions: Vec<SupportedVersion>,
 }
 
