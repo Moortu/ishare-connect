@@ -158,7 +158,7 @@ pub enum SupportedFeatures {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Role {
-    role: String 
+    pub role: String 
 }
 
 #[derive(Serialize, Deserialize, Debug)]
