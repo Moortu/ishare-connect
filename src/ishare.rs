@@ -155,10 +155,9 @@ pub enum SupportedFeatures {
     Restricted(Vec<SupportedFeature>),
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Role {
-    pub role: String 
+    pub role: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -677,8 +676,12 @@ impl ISHARE {
             None => return Err(anyhow::anyhow!("missing x5c header")),
         };
 
-        if !party_info
-            .certificates
+        let certificates = match &party_info.certificates_or_spor {
+            CertificatesOrSpor::Spor(_) => return Err(anyhow::anyhow!("cannot validate party certificate for SPOR")),
+            CertificatesOrSpor::Certificates(cert) => cert,
+        };
+
+        if !certificates
             .iter()
             .any(|c| &c.x5c == &client_cert)
         {
@@ -811,11 +814,25 @@ pub struct Certificate {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+
+pub struct Spor {
+    signed_request: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CertificatesOrSpor {
+    Certificates(Vec<Certificate>),
+    Spor(Spor),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PartyInfo {
     pub adherence: Adherence,
     pub party_id: String,
     pub party_name: String,
-    pub certificates: Vec<Certificate>,
+    #[serde(flatten)]
+    pub certificates_or_spor: CertificatesOrSpor,
     pub capability_url: String,
 }
 
