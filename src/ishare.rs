@@ -196,7 +196,8 @@ pub struct ISHARE {
     ishare_cert: Option<X509>,
     satellite_url: String,
     client_eori: String,
-    pub sattelite_eori: String,
+    pub satellite_eori: String,
+    allowed_dataspaces: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for ISHARE {
@@ -252,6 +253,7 @@ impl ISHARE {
         ishare_cert_path: Option<String>,
         client_eori: String,
         satellite_eori: String,
+        allowed_dataspaces: Option<Vec<String>>,
     ) -> Result<Self, IshareError> {
         let _provider = openssl::provider::Provider::try_load(None, "legacy", true).unwrap();
 
@@ -279,7 +281,8 @@ impl ISHARE {
             ishare_cert,
             satellite_url,
             client_eori,
-            sattelite_eori: satellite_eori,
+            satellite_eori,
+            allowed_dataspaces,
         });
     }
 
@@ -396,6 +399,8 @@ impl ISHARE {
     ) -> anyhow::Result<String> {
         let url = format!("{}/parties/{}", self.satellite_url, caller_client_id);
 
+        tracing::info!("retrieving iSHARE parties at: {}", url);
+
         let response = reqwest::Client::new()
             .get(&url)
             .header(
@@ -410,6 +415,8 @@ impl ISHARE {
             .json::<PartyResponse>()
             .await
             .context("Error deserializing response from parties endpoint")?;
+
+        tracing::info!("decoded party token: {}", &json.party_token);
 
         return Ok(json.party_token);
     }
@@ -677,18 +684,43 @@ impl ISHARE {
         };
 
         let certificates = match &party_info.certificates_or_spor {
-            CertificatesOrSpor::Spor(_) => return Err(anyhow::anyhow!("cannot validate party certificate for SPOR")),
+            CertificatesOrSpor::Spor(_) => {
+                return Err(anyhow::anyhow!(
+                    "cannot validate party certificate for SPOR"
+                ))
+            }
             CertificatesOrSpor::Certificates(cert) => cert,
         };
 
-        if !certificates
-            .iter()
-            .any(|c| &c.x5c == &client_cert)
-        {
+        if !certificates.iter().any(|c| &c.x5c == &client_cert) {
             return Ok(false);
         }
 
         return Ok(true);
+    }
+
+    // checks if any agreement of the party matches any of the allowed dataspaces
+    // currently does not check if the agreement is still valid
+    pub fn dataspace_agreement_exists(&self, party_info: &PartyInfo) -> bool {
+        tracing::info!("checking if party is part of allowed dataspaces");
+        let allowed_dataspaces = match &self.allowed_dataspaces {
+            Some(ad) => ad,
+            None => {
+                tracing::info!("skip checking. allowed dataspace option was not used");
+                return true;
+            }
+        };
+
+        for agreement in &party_info.agreements {
+            for dataspace in allowed_dataspaces {
+                if &agreement.dataspace_id == dataspace {
+                    tracing::info!("party is part of dataspace: {}", dataspace);
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     pub async fn validate_party(
@@ -731,6 +763,16 @@ impl ISHARE {
             PartyInfoOption::PartyInfo(party_info) if party_info.adherence.status != "Active" => {
                 Err(ValidatePartyError::Inactive(client_id.to_owned()))
             }
+            PartyInfoOption::PartyInfo(party_info)
+                if !self.dataspace_agreement_exists(&party_info) =>
+            {
+                Err(ValidatePartyError::DataspaceAgreementNotFound(
+                    self.allowed_dataspaces
+                        .clone()
+                        .expect("dataspace check should not fail if self.allowed_dataspaces is none")
+                        .join(", "),
+                ))
+            }
             PartyInfoOption::PartyInfo(party_info) => {
                 let end_date = chrono::DateTime::parse_from_rfc3339(&party_info.adherence.end_date)
                     .context(format!(
@@ -766,6 +808,8 @@ pub enum ValidatePartyError {
     NotFound(String),
     #[error("adherence is not active anymore")]
     AdherenceExpired,
+    #[error("no matching agreement found for dataspacesP {0}")]
+    DataspaceAgreementNotFound(String),
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -827,6 +871,11 @@ pub enum CertificatesOrSpor {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct Agreement {
+    dataspace_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PartyInfo {
     pub adherence: Adherence,
     pub party_id: String,
@@ -834,6 +883,7 @@ pub struct PartyInfo {
     #[serde(flatten)]
     pub certificates_or_spor: CertificatesOrSpor,
     pub capability_url: String,
+    pub agreements: Vec<Agreement>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
