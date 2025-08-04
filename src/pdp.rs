@@ -201,6 +201,29 @@ impl<'a> PDP<'a> {
         Ok(response)
     }
 
+    pub async fn remove_policy_set(
+        &self,
+        access_token: &str,
+        policy_set_id: &str,
+    ) -> Result<(), IshareError> {
+        let target_url = format!("{}/policy-set/{}", self.url, policy_set_id);
+
+        reqwest::Client::new()
+            .delete(target_url)
+            .header("Authorization", format!("Bearer {access_token}"))
+            .send()
+            .await
+            .map_err(|e| IshareError {
+                message: e.to_string(),
+            })?
+            .error_for_status()
+            .map_err(|e| IshareError {
+                message: e.to_string(),
+            })?;
+
+        Ok(())
+    }
+
     pub async fn put_policy_filter(
         &self,
         access_token: &str,
