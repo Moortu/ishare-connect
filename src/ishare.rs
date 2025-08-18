@@ -4,6 +4,7 @@ use http::Extensions;
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
+use josekit::{jwe::{RSA_OAEP_256, JweHeader}, jwt::{self, JwtPayload}};
 use openssl::{
     pkcs12::ParsedPkcs12_2,
     pkey::{PKey, Private},
@@ -15,7 +16,8 @@ use reqwest_retry::{
     policies::ExponentialBackoff, RetryTransientMiddleware, Retryable, RetryableStrategy,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::time::UNIX_EPOCH;
+use std::{collections::HashMap, time::UNIX_EPOCH};
+use serde_json::Value;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -512,6 +514,90 @@ impl ISHARE {
         let token = encode(&header, &claims, &encoding_key).unwrap();
 
         return Ok(token);
+    }
+
+    pub fn create_client_assertion_with_extra_claims_encrypted<T: Serialize>(
+        &self,
+        target_id: String,
+        extra_claims: T,
+        idp_cert: &Certificate,
+    ) -> Result<String, IshareError> {
+        let header = self.create_ishare_header()?;
+        let ishare_claims = self.create_ishare_claims(target_id, &self.client_eori)?;
+
+        let claims = IshareClaimsWithExtra {
+            ishare_claims,
+            extra: extra_claims,
+        };        
+
+        let header_str = serde_json::to_string(&header).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+        let claims_str = serde_json::to_string(&claims).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+
+        let header_map: HashMap<&str, Value> = serde_json::from_str(&header_str).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+        let claims_map: HashMap<&str, Value> = serde_json::from_str(&claims_str).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+
+        
+        let mut jwe_header = JweHeader::new();
+        for claim in header_map {
+            let _ = jwe_header.set_claim(claim.0, Some(claim.1.clone()));
+        }
+        //https://crates.io/crates/josekit
+        
+        jwe_header.set_content_encryption("A128CBC-HS256");
+        
+        let mut jwe_payload = JwtPayload::new();
+        for claim in claims_map {
+            let _ = jwe_payload.set_claim(claim.0, Some(claim.1.clone()));
+        }
+
+        let cert = openssl::x509::X509::from_pem(
+            format!(
+                "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+                idp_cert.x5c
+            )
+            .as_bytes(),
+        ).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+
+        let public_key = cert.public_key().map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+        let pkey_bytes = public_key.public_key_to_pem().map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+
+        let encrypter = RSA_OAEP_256.encrypter_from_pem(&pkey_bytes).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+        let jwk: String = jwt::encode_with_encrypter(&jwe_payload, &jwe_header, &encrypter).map_err(|e| IshareError {
+            message: e.to_string()
+        })?;
+        
+        return Ok(jwk);
+
+        /* 
+        
+        let mut jws_header = JwsHeader::new();
+        for claim in header_map {
+            let _ = jws_header.set_claim(claim.0, Some(claim.1.clone()));
+        }
+        let private_key =
+            parse_private_key(self.client_cert.pkey.as_ref().ok_or(IshareError {
+                message: "unable to find client certificate".to_owned(),
+            })?)?;
+
+        let signer = RS256.signer_from_pem(&private_key.as_bytes()).unwrap();
+        let jwt = jwt::encode_with_signer(&jwe_payload, &jwe_header, &signer).unwrap();
+        */
     }
 
     fn get_first_x5c(token: &str) -> Result<X509, GetFirstX5CError> {
