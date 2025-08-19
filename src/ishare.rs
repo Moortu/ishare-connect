@@ -922,7 +922,7 @@ pub enum ValidatePartyError {
     NotFound(String),
     #[error("adherence is not active anymore")]
     AdherenceExpired,
-    #[error("no matching agreement found for dataspacesP {0}")]
+    #[error("no matching agreement found for dataspaces: {0}")]
     DataspaceAgreementNotFound(String),
 }
 
