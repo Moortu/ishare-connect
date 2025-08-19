@@ -37,6 +37,7 @@ async fn main() {
         args.perm_ishare,
         args.id_client.clone(),
         args.eori_sattelite,
+        None,
     )
     .unwrap();
     let token = ishare.create_client_assertion(args.target_id).unwrap();
