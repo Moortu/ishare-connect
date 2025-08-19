@@ -1,6 +1,10 @@
 use anyhow::Context;
 use core::str;
 use http::Extensions;
+use josekit::{
+    jwe::{JweHeader, RSA_OAEP_256},
+    jwt::{self, JwtPayload},
+};
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
@@ -15,7 +19,8 @@ use reqwest_retry::{
     policies::ExponentialBackoff, RetryTransientMiddleware, Retryable, RetryableStrategy,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use std::time::UNIX_EPOCH;
+use serde_json::Value;
+use std::{collections::HashMap, time::UNIX_EPOCH};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Account {
@@ -197,7 +202,7 @@ pub struct ISHARE {
     satellite_url: String,
     client_eori: String,
     pub satellite_eori: String,
-    allowed_dataspaces: Option<Vec<String>>,
+    allowed_dataspaces: Option<AllowedDataspaces>,
 }
 
 impl std::fmt::Debug for ISHARE {
@@ -245,6 +250,12 @@ impl Middleware for LoggingMiddleware {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct AllowedDataspaces {
+    pub dataspace_ids: Vec<String>,
+    pub required_agreement_types: Vec<String>,
+}
+
 impl ISHARE {
     pub fn new(
         client_cert_path: String,
@@ -253,7 +264,7 @@ impl ISHARE {
         ishare_cert_path: Option<String>,
         client_eori: String,
         satellite_eori: String,
-        allowed_dataspaces: Option<Vec<String>>,
+        allowed_dataspaces: Option<AllowedDataspaces>,
     ) -> Result<Self, IshareError> {
         let _provider = openssl::provider::Provider::try_load(None, "legacy", true).unwrap();
 
@@ -416,8 +427,6 @@ impl ISHARE {
             .await
             .context("Error deserializing response from parties endpoint")?;
 
-        tracing::info!("decoded party token: {}", &json.party_token);
-
         return Ok(json.party_token);
     }
 
@@ -519,6 +528,95 @@ impl ISHARE {
         let token = encode(&header, &claims, &encoding_key).unwrap();
 
         return Ok(token);
+    }
+
+    pub fn create_client_assertion_with_extra_claims_encrypted<T: Serialize>(
+        &self,
+        target_id: String,
+        extra_claims: T,
+        idp_cert: &Certificate,
+    ) -> Result<String, IshareError> {
+        let header = self.create_ishare_header()?;
+        let ishare_claims = self.create_ishare_claims(target_id, &self.client_eori)?;
+
+        let claims = IshareClaimsWithExtra {
+            ishare_claims,
+            extra: extra_claims,
+        };
+
+        let header_str = serde_json::to_string(&header).map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+        let claims_str = serde_json::to_string(&claims).map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+
+        let header_map: HashMap<&str, Value> =
+            serde_json::from_str(&header_str).map_err(|e| IshareError {
+                message: e.to_string(),
+            })?;
+        let claims_map: HashMap<&str, Value> =
+            serde_json::from_str(&claims_str).map_err(|e| IshareError {
+                message: e.to_string(),
+            })?;
+
+        let mut jwe_header = JweHeader::new();
+        for claim in header_map {
+            let _ = jwe_header.set_claim(claim.0, Some(claim.1.clone()));
+        }
+        //https://crates.io/crates/josekit
+
+        jwe_header.set_content_encryption("A128CBC-HS256");
+
+        let mut jwe_payload = JwtPayload::new();
+        for claim in claims_map {
+            let _ = jwe_payload.set_claim(claim.0, Some(claim.1.clone()));
+        }
+
+        let cert = openssl::x509::X509::from_pem(
+            format!(
+                "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
+                idp_cert.x5c
+            )
+            .as_bytes(),
+        )
+        .map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+
+        let public_key = cert.public_key().map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+        let pkey_bytes = public_key.public_key_to_pem().map_err(|e| IshareError {
+            message: e.to_string(),
+        })?;
+
+        let encrypter = RSA_OAEP_256
+            .encrypter_from_pem(&pkey_bytes)
+            .map_err(|e| IshareError {
+                message: e.to_string(),
+            })?;
+        let jwk: String = jwt::encode_with_encrypter(&jwe_payload, &jwe_header, &encrypter)
+            .map_err(|e| IshareError {
+                message: e.to_string(),
+            })?;
+
+        return Ok(jwk);
+
+        /*
+
+        let mut jws_header = JwsHeader::new();
+        for claim in header_map {
+            let _ = jws_header.set_claim(claim.0, Some(claim.1.clone()));
+        }
+        let private_key =
+            parse_private_key(self.client_cert.pkey.as_ref().ok_or(IshareError {
+                message: "unable to find client certificate".to_owned(),
+            })?)?;
+
+        let signer = RS256.signer_from_pem(&private_key.as_bytes()).unwrap();
+        let jwt = jwt::encode_with_signer(&jwe_payload, &jwe_header, &signer).unwrap();
+        */
     }
 
     fn get_first_x5c(token: &str) -> Result<X509, GetFirstX5CError> {
@@ -699,7 +797,8 @@ impl ISHARE {
         return Ok(true);
     }
 
-    // checks if any agreement of the party matches any of the allowed dataspaces
+    // checks if any agreement of the party matches all the agreement types of
+    // any of the allowed dataspaces
     // currently does not check if the agreement is still valid
     pub fn dataspace_agreement_exists(&self, party_info: &PartyInfo) -> bool {
         tracing::info!("checking if party is part of allowed dataspaces");
@@ -711,12 +810,24 @@ impl ISHARE {
             }
         };
 
-        for agreement in &party_info.agreements {
-            for dataspace in allowed_dataspaces {
-                if &agreement.dataspace_id == dataspace {
-                    tracing::info!("party is part of dataspace: {}", dataspace);
-                    return true;
-                }
+        for dataspace in &allowed_dataspaces.dataspace_ids {
+            tracing::info!(
+                "checking if agreements are present for dataspace: {}",
+                dataspace
+            );
+            let agreements_present =
+                allowed_dataspaces
+                    .required_agreement_types
+                    .iter()
+                    .all(|agreement_type| {
+                        party_info.agreements.iter().any(|party_info_agreement| {
+                            agreement_type == &party_info_agreement.r#type
+                                && &party_info_agreement.dataspace_id == dataspace
+                        })
+                    });
+
+            if agreements_present {
+                return true;
             }
         }
 
@@ -769,7 +880,10 @@ impl ISHARE {
                 Err(ValidatePartyError::DataspaceAgreementNotFound(
                     self.allowed_dataspaces
                         .clone()
-                        .expect("dataspace check should not fail if self.allowed_dataspaces is none")
+                        .expect(
+                            "dataspace check should not fail if self.allowed_dataspaces is none",
+                        )
+                        .dataspace_ids
                         .join(", "),
                 ))
             }
@@ -873,6 +987,8 @@ pub enum CertificatesOrSpor {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Agreement {
     dataspace_id: String,
+    #[serde(rename = "type")]
+    r#type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

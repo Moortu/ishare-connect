@@ -1,6 +1,6 @@
 [package]
 name = "ishare"
-version = "0.9.1"
+version = "0.10.1"
 edition = "2021"
 description = "Helps you connect within the ishare framework"
 homepage = "https://github.com/LIFE-Electronic/ishare-connect"
@@ -13,6 +13,7 @@ license-file = "LICENSE"
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 jsonwebtoken = "9.3.0"
+josekit = { version = "0.10.3" }
 openssl = { version = "0.10.64", features = ["vendored"] }
 reqwest = { version = "0.12.3", features = ["blocking", "json"] }
 serde = { version = "1.0.197", features = ["derive"] }
