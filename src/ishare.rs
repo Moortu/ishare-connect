@@ -2,8 +2,9 @@ use anyhow::Context;
 use core::str;
 use http::Extensions;
 use josekit::{
-    jwe::{JweHeader, RSA_OAEP_256},
-    jwt::{self, JwtPayload},
+    jwe::{self, JweHeader, RSA_OAEP_256},
+    jws::{alg::rsassa::RsassaJwsAlgorithm, JwsHeader},
+    jwt::{encode_with_signer, JwtPayload},
 };
 use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
@@ -560,19 +561,28 @@ impl ISHARE {
                 message: e.to_string(),
             })?;
 
-        let mut jwe_header = JweHeader::new();
+        let mut jws_header = JwsHeader::new();
         for claim in header_map {
-            let _ = jwe_header.set_claim(claim.0, Some(claim.1.clone()));
+            let _ = jws_header.set_claim(claim.0, Some(claim.1.clone()));
         }
-        //https://crates.io/crates/josekit
 
-        jwe_header.set_content_encryption("A128CBC-HS256");
-
-        let mut jwe_payload = JwtPayload::new();
+        let mut jwt_payload = JwtPayload::new();
         for claim in claims_map {
-            let _ = jwe_payload.set_claim(claim.0, Some(claim.1.clone()));
+            let _ = jwt_payload.set_claim(claim.0, Some(claim.1.clone()));
         }
 
+        // create the JWT
+        let private_key =
+            parse_private_key(self.client_cert.pkey.as_ref().ok_or(IshareError {
+                message: "unable to find client certificate".to_owned(),
+            })?)?;
+
+        let signer = RsassaJwsAlgorithm::Rs256
+            .signer_from_pem(&private_key)
+            .unwrap();
+        let jws_payload = encode_with_signer(&jwt_payload, &jws_header, &signer).unwrap();
+
+        // encrypt the JWS payload
         let cert = openssl::x509::X509::from_pem(
             format!(
                 "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----",
@@ -596,27 +606,20 @@ impl ISHARE {
             .map_err(|e| IshareError {
                 message: e.to_string(),
             })?;
-        let jwk: String = jwt::encode_with_encrypter(&jwe_payload, &jwe_header, &encrypter)
-            .map_err(|e| IshareError {
-                message: e.to_string(),
-            })?;
 
-        return Ok(jwk);
+        let mut jwe_header = JweHeader::new();
 
-        /*
+        jwe_header.set_content_encryption("A128CBC-HS256");
+        jwe_header.set_content_type("JWT");
 
-        let mut jws_header = JwsHeader::new();
-        for claim in header_map {
-            let _ = jws_header.set_claim(claim.0, Some(claim.1.clone()));
-        }
-        let private_key =
-            parse_private_key(self.client_cert.pkey.as_ref().ok_or(IshareError {
-                message: "unable to find client certificate".to_owned(),
-            })?)?;
+        let jwe_compact = jwe::serialize_compact(
+            jws_payload.as_bytes(), // encrypt the *entire* signed JWT string
+            &jwe_header,
+            &encrypter,
+        )
+        .unwrap();
 
-        let signer = RS256.signer_from_pem(&private_key.as_bytes()).unwrap();
-        let jwt = jwt::encode_with_signer(&jwe_payload, &jwe_header, &signer).unwrap();
-        */
+        return Ok(jwe_compact);
     }
 
     fn get_first_x5c(token: &str) -> Result<X509, GetFirstX5CError> {
