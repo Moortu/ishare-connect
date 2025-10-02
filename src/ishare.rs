@@ -199,7 +199,7 @@ impl std::error::Error for IshareError {}
 
 pub struct ISHARE {
     client_cert: ParsedPkcs12_2,
-    ishare_cert: Option<X509>,
+    ishare_certs: Vec<X509>,
     satellite_url: String,
     client_eori: String,
     pub satellite_eori: String,
@@ -273,24 +273,37 @@ impl ISHARE {
         let pkcs12 = openssl::pkcs12::Pkcs12::from_der(&client_cert_content).unwrap();
         let client_cert = pkcs12.parse2(&client_cert_pass).unwrap();
 
-        let ishare_cert = match ishare_cert_path {
+        let ishare_certs = match ishare_cert_path {
             Some(path) => {
                 let ishare_cert_content = std::fs::read(path).map_err(|e| IshareError {
                     message: e.to_string(),
                 })?;
 
-                Some(
-                    X509::from_pem(&ishare_cert_content).map_err(|e| IshareError {
-                        message: e.to_string(),
-                    })?,
-                )
+                // Load all certificates from the chain
+                let certs = X509::stack_from_pem(&ishare_cert_content).map_err(|e| IshareError {
+                    message: format!("Failed to load certificate chain: {}", e),
+                })?;
+
+                if certs.is_empty() {
+                    return Err(IshareError {
+                        message: "No certificates found in chain file".to_owned(),
+                    });
+                }
+
+                tracing::info!("Loaded {} CA certificates from chain.pem", certs.len());
+                for (idx, cert) in certs.iter().enumerate() {
+                    tracing::info!("  [{}] Subject: {:?}", idx, cert.subject_name());
+                    tracing::info!("  [{}] Issuer: {:?}", idx, cert.issuer_name());
+                }
+
+                certs
             }
-            None => None,
+            None => Vec::new(),
         };
 
         return Ok(Self {
             client_cert,
-            ishare_cert,
+            ishare_certs,
             satellite_url,
             client_eori,
             satellite_eori,
@@ -643,21 +656,41 @@ impl ISHARE {
     }
 
     pub fn validate_token(&self, token: &String) -> Result<bool, ValidateTokenError> {
-        let ishare_cert = self
-            .ishare_cert
-            .as_ref()
-            .context("Error dereferencing ishare_cert")?;
+        if self.ishare_certs.is_empty() {
+            return Err(anyhow::anyhow!("No iSHARE CA certificates loaded").into());
+        }
 
         let cert = ISHARE::get_first_x5c(token)?;
+
+        // Find the CA certificate that matches the token cert's issuer
+        let mut matching_ca: Option<&X509> = None;
+        let cert_issuer_der = cert.issuer_name().to_der().context("Failed to convert issuer name to DER")?;
+        
+        for ca_cert in self.ishare_certs.iter() {
+            // Compare X509Names by converting to DER format
+            let ca_subject_der = ca_cert.subject_name().to_der().context("Failed to convert subject name to DER")?;
+            if cert_issuer_der == ca_subject_der {
+                matching_ca = Some(ca_cert);
+                break;
+            }
+        }
+
+        let ishare_cert = matching_ca.ok_or_else(|| {
+            anyhow::anyhow!(
+                "No matching CA certificate found for issuer: {:?}",
+                cert.issuer_name()
+            )
+        })?;
 
         let public_key = ishare_cert
             .public_key()
             .context("Error getting public key")?;
 
-        if !cert
+        let verify_result = cert
             .verify(&public_key)
-            .context("Error verifying certificate with public key")?
-        {
+            .context("Error verifying certificate with public key")?;
+
+        if !verify_result {
             return Ok(false);
         }
 
